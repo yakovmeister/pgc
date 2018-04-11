@@ -1,5 +1,7 @@
 import knex from 'knex'
+import restify from 'restify'
 import inter_level from './utility/inter_level'
+import { SERVFAIL } from 'dns';
 
 const BASE_PATH = '/v1'
 
@@ -10,10 +12,17 @@ const db = knex({
   }
 })
 
+const queryOptions = {
+  limit: 50,
+  page: 1
+}
+
 export default function routes(app) {
   app.get(`${BASE_PATH}/:inter_level`, (req, res, next) => {
     let { query, params } = req
     let level = inter_level(params.inter_level)
+
+    query = { ...queryOptions, ...query }
 
     // checks whether the inter_level function returned
     // and error, if so, respond the error.
@@ -31,13 +40,33 @@ export default function routes(app) {
       })
     }
 
-    base.then(result => {
-      return base.count().then(count => {
-        return res.send({
-          total: count[0]['count(*)'],
-          result
+    let final = base.clone()
+    let offset = (query.page - 1) * query.limit
+
+    final.limit(query.limit)
+      .offset(offset)
+      .then(result => {
+        return base.count().then(count => {
+          let total = count[0]['count(*)']
+          let of = Math.ceil(total / query.limit)
+
+          return res.send({
+            page: parseInt(query.page),
+            of,
+            total,
+            result
+          })
         })
       })
-    })
   })
+
+  app.get(`${BASE_PATH}`, (req, res, next) => {
+    let serve = restify.plugins.serveStatic({
+      directory: __dirname + '/../documentation',
+      default: 'index.html'
+    })
+
+    serve(req, res, next)
+  })
+
 }
